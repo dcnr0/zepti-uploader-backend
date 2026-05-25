@@ -1,115 +1,84 @@
+import os
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os
-import asyncio
-import aiohttp
-import json
-import random
-import string
-import io
-import numpy as np
 
 app = Flask(__name__)
-CORS(app)
+CORS(app) # Allow incoming cross-origin extension requests safely
 
-def get_uid(l=8): 
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=l))
+ROBLOX_ASSETS_API = "https://apis.roblox.com/assets/v1/assets"
 
-def scramble_binary(raw_data: bytearray):
-    if len(raw_data) > 2000:
-        for _ in range(8):
-            insert_pos = random.randint(500, len(raw_data) - 500)
-            raw_data[insert_pos:insert_pos] = os.urandom(random.randint(4, 16))
-    raw_data.extend(os.urandom(random.randint(128, 512)))
-    return bytes(raw_data)
-
-def apply_acoustic_stutter(audio_bytes, index):
-    # If it's too short, don't chop it
-    if len(audio_bytes) < 10000:
-        return scramble_binary(bytearray(audio_bytes))
-        
-    # We slice the raw audio payload stream directly to create an acoustic stutter 
-    # without needing legacy audioop extensions
-    header_offset = 1024  # Keep the format headers safe
-    stutter_chunk_size = random.randint(2000, 4000)
-    
-    stutter_chunk = audio_bytes[header_offset : header_offset + stutter_chunk_size]
-    repeated_stutter = stutter_chunk * (index % 4 + 1) # Multiplies the audio sample start acoustic layer
-    
-    # Reconstruct the modified file layout
-    mutated_audio = bytearray(audio_bytes[:header_offset])
-    mutated_audio.extend(repeated_stutter)
-    mutated_audio.extend(audio_bytes[header_offset + stutter_chunk_size:])
-    
-    return scramble_binary(mutated_audio)
-
-async def upload_task(session, raw_audio, idx, title, api_key, target_id, creator_key):
-    # Runs the calculation in a separate thread so it doesn't freeze your upload pipeline
-    data = await asyncio.get_event_loop().run_in_executor(
-        None, apply_acoustic_stutter, raw_audio, idx
-    )
-    
-    display_name = f"{title}{idx}" 
-    headers = {"x-api-key": api_key}
-    url = "https://apis.roblox.com/assets/v1/assets"
-    
-    for attempt in range(15):  
-        form = aiohttp.FormData()
-        payload = {
-            "assetType": "Audio", 
-            "displayName": display_name, 
-            "description": "zepti_W'", 
-            "creationContext": {"creator": {creator_key: str(target_id)}}
-        }
-        form.add_field('request', json.dumps(payload), content_type='application/json')
-        form.add_field('fileContent', data, filename=f'{get_uid(4)}.mp3', content_type='audio/mpeg')
-        
-        try:
-            async with session.post(url, data=form, headers=headers, timeout=25) as r:
-                if r.status in [200, 201, 202]:
-                    return {"status": "success", "name": display_name, "msg": "Uploaded successfully."}
-                if r.status == 429:
-                    await asyncio.sleep(6)  
-                else:
-                    return {"status": "error", "name": display_name, "msg": f"HTTP {r.status}"}
-        except Exception:
-            await asyncio.sleep(1)
-            
-    return {"status": "error", "name": display_name, "msg": "Retries exhausted"}
-    
 @app.route('/', methods=['GET'])
 def health_check():
-    return "Pipeline active and listening.", 200
+    """Returns a status check route to keep UptimeRobot monitors happy and green."""
+    return "Pipeline backend link is fully active and loaded in system memory.", 200
+
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
-    api_key = request.form.get('apikey')
-    target_id = request.form.get('targetId')
-    is_group = request.form.get('isGroup') == 'true'
-    title = request.form.get('title', 'name')
-    upload_count = min(max(int(request.form.get('count', 10)), 1), 100)
-    
-    if 'audio_file' not in request.files:
-        return jsonify({"error": "No audio file container detected"}), 400
-        
-    audio_file = request.files['audio_file']
-    raw_audio = audio_file.read()
-    
+    # Double-mapped input parameters to avoid KeyErrors
+    api_key = request.form.get('api_key') or request.form.get('apikey')
+    target_id = request.form.get('target_id') or request.form.get('targetId')
+    is_group_raw = request.form.get('is_group') or request.form.get('isGroup') or 'false'
+    base_title = request.form.get('title') or request.form.get('asset_title') or 'audio_variant'
+
+    is_group = is_group_raw.lower() == 'true'
+
+    if not api_key or not target_id:
+        return jsonify({"error": "Bad Request: Missing api_key or target_id form elements."}), 400
+
+    if 'audio_files' not in request.files:
+        return jsonify({"error": "Bad Request: No binary file objects packed in form request."}), 400
+
+    uploaded_files = request.files.getlist('audio_files')
+    results = []
+
+    # Map target context structure required by Roblox
     creator_key = "groupId" if is_group else "userId"
 
-    async def run_pipeline():
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=0)) as session:
-            tasks = [
-                upload_task(session, raw_audio, i, title, api_key, target_id, creator_key)
-                for i in range(1, upload_count + 1)
-            ]
-            return await asyncio.gather(*tasks)
+    headers = {
+        "x-api-key": api_key
+    }
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    results = loop.run_until_complete(run_pipeline())
-    loop.close()
-    
-    return jsonify({"results": results})
+    for idx, file in enumerate(uploaded_files, start=1):
+        filename = file.filename or f"variant_{idx}.mp3"
+        display_name = f"{base_title}_{idx}"
+        
+        # Build multipart asset structural configuration parameters
+        asset_config = {
+            "assetType": "Audio",
+            "displayName": display_name,
+            "description": "Dispatched via Zepti's MassUploader Cloud Cluster Engine",
+            "creationContext": {
+                "creator": {
+                    creator_key: str(target_id)
+                }
+            }
+        }
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=10000)
+        try:
+            # Reset file pointer to read raw stream data cleanly
+            file.seek(0)
+            file_bytes = file.read()
+
+            files_payload = {
+                'request': (None, jsonify(asset_config).get_data(), 'application/json'),
+                'fileContent': (filename, file_bytes, 'audio/mpeg')
+            }
+
+            # Forward request package directly onto Roblox Open Cloud asset allocation matrix
+            response = requests.post(ROBLOX_ASSETS_API, headers=headers, files=files_payload)
+
+            if response.status_code in [200, 201]:
+                results.append({"name": display_name, "status": "success"})
+            else:
+                error_msg = response.json().get('message', f'HTTP Status {response.status_code}')
+                results.append({"name": display_name, "status": "failed", "msg": error_msg})
+
+        except Exception as e:
+            results.append({"name": display_name, "status": "failed", "msg": str(e)})
+
+    return jsonify({"results": results}), 200
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
