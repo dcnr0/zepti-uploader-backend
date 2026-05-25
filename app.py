@@ -58,7 +58,7 @@ async def upload_task(session, raw_audio, idx, title, api_key, target_id, creato
         payload = {
             "assetType": "Audio", 
             "displayName": display_name, 
-            "description": "Dispatched via Zepti's MassUploader Cloud Cluster Engine", 
+            "description": "zepti_W'", 
             "creationContext": {"creator": {creator_key: str(target_id)}}
         }
         form.add_field('request', json.dumps(payload), content_type='application/json')
