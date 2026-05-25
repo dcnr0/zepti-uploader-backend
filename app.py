@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app) # Allow incoming cross-origin extension requests safely
+CORS(app)
 
 ROBLOX_ASSETS_API = "https://apis.roblox.com/assets/v1/assets"
 
@@ -15,67 +15,60 @@ def health_check():
 
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
-    # Double-mapped input parameters to avoid KeyErrors
     api_key = request.form.get('api_key') or request.form.get('apikey')
     target_id = request.form.get('target_id') or request.form.get('targetId')
     is_group_raw = request.form.get('is_group') or request.form.get('isGroup') or 'false'
-    base_title = request.form.get('title') or request.form.get('asset_title') or 'audio_variant'
+    display_name = request.form.get('asset_title') or request.form.get('title') or 'audio_variant'
 
     is_group = is_group_raw.lower() == 'true'
 
     if not api_key or not target_id:
         return jsonify({"error": "Bad Request: Missing api_key or target_id form elements."}), 400
 
-    if 'audio_files' not in request.files:
-        return jsonify({"error": "Bad Request: No binary file objects packed in form request."}), 400
+    # Handle both single audio_file or the previous audio_files array key cleanly
+    file = request.files.get('audio_file') or request.files.get('audio_files')
+    if not file:
+        return jsonify({"error": "Bad Request: No binary file objects found in request form."}), 400
 
-    uploaded_files = request.files.getlist('audio_files')
+    creator_key = "groupId" if is_group else "userId"
+    headers = {"x-api-key": api_key}
     results = []
 
-    # Map target context structure required by Roblox
-    creator_key = "groupId" if is_group else "userId"
-
-    headers = {
-        "x-api-key": api_key
-    }
-
-    for idx, file in enumerate(uploaded_files, start=1):
-        filename = file.filename or f"variant_{idx}.mp3"
-        display_name = f"{base_title}_{idx}"
-        
-        # Build multipart asset structural configuration parameters
-        asset_config = {
-            "assetType": "Audio",
-            "displayName": display_name,
-            "description": "Dispatched via Zepti's MassUploader Cloud Cluster Engine",
-            "creationContext": {
-                "creator": {
-                    creator_key: str(target_id)
-                }
+    filename = file.filename or "variant.mp3"
+    
+    asset_config = {
+        "assetType": "Audio",
+        "displayName": display_name,
+        "description": "Dispatched via Zepti's MassUploader Cloud Cluster Engine",
+        "creationContext": {
+            "creator": {
+                creator_key: str(target_id)
             }
         }
+    }
 
-        try:
-            # Reset file pointer to read raw stream data cleanly
-            file.seek(0)
-            file_bytes = file.read()
+    try:
+        file.seek(0)
+        file_bytes = file.read()
 
-            files_payload = {
-                'request': (None, jsonify(asset_config).get_data(), 'application/json'),
-                'fileContent': (filename, file_bytes, 'audio/mpeg')
-            }
+        files_payload = {
+            'request': (None, jsonify(asset_config).get_data(), 'application/json'),
+            'fileContent': (filename, file_bytes, 'audio/mpeg')
+        }
 
-            # Forward request package directly onto Roblox Open Cloud asset allocation matrix
-            response = requests.post(ROBLOX_ASSETS_API, headers=headers, files=files_payload)
+        response = requests.post(ROBLOX_ASSETS_API, headers=headers, files=files_payload)
 
-            if response.status_code in [200, 201]:
-                results.append({"name": display_name, "status": "success"})
-            else:
+        if response.status_code in [200, 201]:
+            results.append({"name": display_name, "status": "success"})
+        else:
+            try:
                 error_msg = response.json().get('message', f'HTTP Status {response.status_code}')
-                results.append({"name": display_name, "status": "failed", "msg": error_msg})
+            except:
+                error_msg = f'HTTP Error {response.status_code}'
+            results.append({"name": display_name, "status": "failed", "msg": error_msg})
 
-        except Exception as e:
-            results.append({"name": display_name, "status": "failed", "msg": str(e)})
+    except Exception as e:
+        results.append({"name": display_name, "status": "failed", "msg": str(e)})
 
     return jsonify({"results": results}), 200
 
