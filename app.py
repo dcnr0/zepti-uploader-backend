@@ -11,7 +11,7 @@ import io
 from pydub import AudioSegment
 
 app = Flask(__name__)
-# Enable CORS so your local Google Chrome Extension can securely talk to Render
+# Enable CORS completely so your local Google Chrome extension window can reach the cloud
 CORS(app)
 
 def get_uid(l=8): 
@@ -26,6 +26,7 @@ def scramble_binary(raw_data: bytearray):
     return bytes(raw_data)
 
 def process_audio_bypass(audio_bytes, index, stutter_ms):
+    # This processes your unique data streams via the system's FFmpeg layer
     audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
     stutter = audio[:stutter_ms] * index
     audio = stutter + audio
@@ -48,6 +49,7 @@ async def upload_task(session, raw_audio, idx, stutter, title, api_key, target_i
     headers = {"x-api-key": api_key}
     url = "https://apis.roblox.com/assets/v1/assets"
     
+    # 15 retry loops to safely absorb 429 rate limit errors
     for attempt in range(15):  
         form = aiohttp.FormData()
         payload = {
