@@ -7,7 +7,7 @@ CORS(app)
 
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
-    # Tunneling mode: The browser did the heavy lifting.
+    # Tunneling: Receive pre-processed file and forward to Roblox
     data = request.form
     file = request.files.get('audio_file')
     
@@ -29,7 +29,8 @@ def handle_massupload():
             'fileContent': ('v.mp3', file.read(), 'audio/mpeg')
         }
     )
-    return jsonify({"status": "success" if resp.status_code < 300 else "failed", "code": resp.status_code}), 200
+    return jsonify({"status": "success" if resp.status_code < 300 else "failed"}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
