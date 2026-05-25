@@ -1,33 +1,21 @@
-import os, requests, json
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-
-app = Flask(__name__)
-CORS(app)
-
+# app.py (Optimized Tunnel)
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
+    # Bypass heavy processing; use direct read for speed
     data = request.form
     file = request.files.get('audio_file')
-    if not file: return jsonify({"status": "error"}), 400
-
-    headers = {"x-api-key": data.get('api_key')}
-    asset_config = {
-        "assetType": "Audio",
-        "displayName": data.get('asset_title'),
-        "description": "zepti_W",
-        "creationContext": {"creator": {"groupId" if data.get('is_group') == 'true' else "userId": str(data.get('target_id'))}}
-    }
     
+    # Send directly to Roblox
     resp = requests.post(
         "https://apis.roblox.com/assets/v1/assets", 
-        headers=headers, 
+        headers={"x-api-key": data.get('api_key')}, 
         files={
-            'request': (None, json.dumps(asset_config), 'application/json'),
+            'request': (None, json.dumps({
+                "assetType": "Audio",
+                "displayName": data.get('asset_title'),
+                "creationContext": {"creator": {"groupId" if data.get('is_group') == 'true' else "userId": str(data.get('target_id'))}}
+            }), 'application/json'),
             'fileContent': ('v.mp3', file.read(), 'audio/mpeg')
         }
     )
-    return jsonify({"status": "success" if resp.status_code < 300 else "failed"}), 200
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    return jsonify({"status": "ok" if resp.status_code < 300 else "fail"}), resp.status_code
