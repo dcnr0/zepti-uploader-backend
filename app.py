@@ -76,7 +76,10 @@ async def upload_task(session, raw_audio, idx, title, api_key, target_id, creato
             await asyncio.sleep(1)
             
     return {"status": "error", "name": display_name, "msg": "Retries exhausted"}
-
+    
+@app.route('/', methods=['GET'])
+def health_check():
+    return "Pipeline active and listening.", 200
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
     api_key = request.form.get('apikey')
