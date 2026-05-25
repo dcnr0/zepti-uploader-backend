@@ -15,31 +15,46 @@ def health_check():
 
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
-    api_key = request.form.get('api_key') or request.form.get('apikey')
-    target_id = request.form.get('target_id') or request.form.get('targetId')
-    is_group_raw = request.form.get('is_group') or request.form.get('isGroup') or 'false'
-    display_name = request.form.get('asset_title') or request.form.get('title') or 'audio_variant'
+    # The browser has already done the heavy lifting (stutter/warp/scramble)
+    # We just grab the data and forward it to Roblox.
+    data = request.form
+    file = request.files.get('audio_file')
 
-    is_group = is_group_raw.lower() == 'true'
-
-    if not api_key or not target_id:
-        return jsonify({"error": "Bad Request: Missing api_key or target_id form elements."}), 400
-
-    # Handle both single audio_file or the previous audio_files array key cleanly
-    file = request.files.get('audio_file') or request.files.get('audio_files')
     if not file:
-        return jsonify({"error": "Bad Request: No binary file objects found in request form."}), 400
+        return jsonify({"status": "failed", "msg": "No file received"}), 400
 
-    creator_key = "groupId" if is_group else "userId"
-    headers = {"x-api-key": api_key}
-    results = []
+    headers = {"x-api-key": data.get('api_key')}
+    
+    asset_config = {
+        "assetType": "Audio",
+        "displayName": data.get('asset_title'),
+        "description": "zepti_W",
+        "creationContext": {
+            "creator": {
+                "groupId" if data.get('is_group') == 'true' else "userId": str(data.get('target_id'))
+            }
+        }
+    }
 
-    filename = file.filename or "variant.mp3"
+    # Stream the bytes directly to Roblox
+    resp = requests.post(
+        "https://apis.roblox.com/assets/v1/assets", 
+        headers=headers, 
+        files={
+            'request': (None, json.dumps(asset_config), 'application/json'),
+            'fileContent': ('processed.mp3', file.read(), 'audio/mpeg')
+        }
+    )
+    
+    return jsonify({
+        "status": "success" if resp.status_code < 300 else "failed",
+        "code": resp.status_code
+    }), 200
     
     asset_config = {
         "assetType": "Audio",
         "displayName": display_name,
-        "description": "Dispatched via Zepti's MassUploader Cloud Cluster Engine",
+        "description": "zepti_W",
         "creationContext": {
             "creator": {
                 creator_key: str(target_id)
