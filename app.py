@@ -1,7 +1,6 @@
-import os, requests, json, io
+import requests, json, io, os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from pydub import AudioSegment
 
 app = Flask(__name__)
 CORS(app)
@@ -9,26 +8,26 @@ CORS(app)
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
     try:
-        # Get data
+        # Get form data
         api_key = request.form.get('api_key')
         target_id = request.form.get('target_id')
         is_group = request.form.get('is_group') == 'true'
         asset_title = request.form.get('asset_title')
         file = request.files.get('audio_file')
 
-        if not file: return jsonify({"error": "No file"}), 400
+        if not file or not api_key:
+            return jsonify({"status": "error", "message": "Missing fields"}), 400
 
-        # --- STUTTER LOGIC ---
-        # Loads the file into memory and adds the stutter effect
-        audio = AudioSegment.from_file(file)
-        stutter_block = audio[:100] # 100ms stutter
-        processed_audio = (stutter_block * 3) + audio
+        # Read file as raw binary
+        raw_data = file.read()
         
-        buffer = io.BytesIO()
-        processed_audio.export(buffer, format="mp3")
-        buffer.seek(0)
+        # --- STUTTER LOGIC (300 BPM = 200ms) ---
+        # 2,500 bytes approximates 200ms. 
+        # Repeating this block 3 times adds the stutter effect at the start.
+        header_stutter = raw_data[:2500] * 3
+        processed_data = header_stutter + raw_data
 
-        # Prepare Roblox Request
+        # Prepare Roblox Asset Config
         creator = {"groupId": target_id} if is_group else {"userId": target_id}
         asset_config = {
             "assetType": "Audio",
@@ -37,14 +36,16 @@ def handle_massupload():
             "creationContext": {"creator": creator}
         }
         
+        # Stream to Roblox
         response = requests.post(
             "https://apis.roblox.com/assets/v1/assets",
             headers={"x-api-key": api_key},
             files={
                 'request': (None, json.dumps(asset_config), 'application/json'),
-                'fileContent': ('audio.mp3', buffer, 'audio/mpeg')
+                'fileContent': ('v.mp3', io.BytesIO(processed_data), 'audio/mpeg')
             }
         )
+        
         return jsonify({"status": "success", "code": response.status_code}), response.status_code
 
     except Exception as e:
