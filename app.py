@@ -8,7 +8,7 @@ CORS(app)
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
     try:
-        # Get form data
+        # Get data from request
         api_key = request.form.get('api_key')
         target_id = request.form.get('target_id')
         is_group = request.form.get('is_group') == 'true'
@@ -21,9 +21,10 @@ def handle_massupload():
         # Read file as raw binary
         raw_data = file.read()
         
-        # --- STUTTER LOGIC (300 BPM = 200ms) ---
-        # 2,500 bytes approximates 200ms. 
-        # Repeating this block 3 times adds the stutter effect at the start.
+        # STUTTER LOGIC: 
+        # 300 BPM = 200ms duration per beat.
+        # Slicing the first 2500 bytes approximates 200ms.
+        # Prepending this block 3 times creates the stutter effect.
         header_stutter = raw_data[:2500] * 3
         processed_data = header_stutter + raw_data
 
@@ -36,7 +37,7 @@ def handle_massupload():
             "creationContext": {"creator": creator}
         }
         
-        # Stream to Roblox
+        # Send to Roblox API
         response = requests.post(
             "https://apis.roblox.com/assets/v1/assets",
             headers={"x-api-key": api_key},
