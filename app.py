@@ -8,25 +8,35 @@ CORS(app)
 @app.route('/api/massupload', methods=['POST'])
 def handle_massupload():
     try:
-        # Get data from request
+        # Get data
         api_key = request.form.get('api_key')
         target_id = request.form.get('target_id')
         is_group = request.form.get('is_group') == 'true'
-        asset_title = request.form.get('asset_title')
+        asset_title = request.form.get('asset_title') # Format: "name_j"
         file = request.files.get('audio_file')
 
         if not file or not api_key:
             return jsonify({"status": "error", "message": "Missing fields"}), 400
 
-        # Read file as raw binary
+        # Extract index from title (e.g., "mytrack_1", "mytrack_2")
+        # We assume the index is the last part after the underscore
+        try:
+            index = int(asset_title.split('_')[-1])
+        except:
+            index = 1
+
         raw_data = file.read()
         
-        # STUTTER LOGIC: 
-        # 300 BPM = 200ms duration per beat.
-        # Slicing the first 2500 bytes approximates 200ms.
-        # Prepending this block 3 times creates the stutter effect.
-        header_stutter = raw_data[:2500] * 3
-        processed_data = header_stutter + raw_data
+        # LOGIC: 1st (index 1) = 0 repeats, 2nd (index 2) = 1 repeat, 3rd (index 3) = 2 repeats
+        # Calculation: repeats = index - 1
+        num_repeats = max(0, index - 1)
+        
+        # Apply stutter if repeats > 0
+        if num_repeats > 0:
+            header_stutter = raw_data[:2500] * num_repeats
+            processed_data = header_stutter + raw_data
+        else:
+            processed_data = raw_data
 
         # Prepare Roblox Asset Config
         creator = {"groupId": target_id} if is_group else {"userId": target_id}
@@ -37,7 +47,6 @@ def handle_massupload():
             "creationContext": {"creator": creator}
         }
         
-        # Send to Roblox API
         response = requests.post(
             "https://apis.roblox.com/assets/v1/assets",
             headers={"x-api-key": api_key},
