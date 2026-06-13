@@ -12,10 +12,11 @@ CORS(app)
 
 def extract_index(title: str) -> int:
     """
-    Robustly extracts the trailing numeric index from the asset title.
-    Handles formats like 'MyTrack_1', 'MyTrack_0002', or 'Track_Name_0003'.
+    Extracts the trailing number from names like 'SOMETHING1', 'Track2', or 'Decal10'.
+    Handles direct alphanumeric combinations with no spacing or underscores.
+    Falls back to 1 if no trailing number is found.
     """
-    match = re.search(r'_(\d+)$', title.strip())
+    match = re.search(r'(\d+)$', title.strip())
     if match:
         return int(match.group(1))
     return 1
@@ -32,13 +33,13 @@ def handle_massupload():
         if not file or not api_key:
             return jsonify({"status": "error", "message": "Missing fields"}), 400
 
-        # Safe, robust index extraction
+        # Extracts number directly from formats like "SOMETHING1", "SOMETHING2"
         index = extract_index(asset_title)
 
         raw_data = file.read()
         num_repeats = max(0, index - 1)
         
-        # Audio Byte-Stutter: Combine header mutation with unique trailer padding
+        # Audio Byte-Stutter
         if num_repeats > 0:
             header_stutter = raw_data[:2000] * num_repeats
             unique_trailer = bytes([random.randint(0, 255) for _ in range(8)]) * num_repeats
@@ -78,13 +79,13 @@ def handle_decalupload():
         if not file or not api_key:
             return jsonify({"status": "error", "message": "Missing fields"}), 400
 
-        # Safe, robust index extraction
+        # Extracts number directly from formats like "SOMETHING1", "SOMETHING2"
         index = extract_index(asset_title)
 
         raw_image_data = file.read()
         num_repeats = max(0, index - 1)
         
-        # Decal Byte-Stutter: Append unique data to the end of the image file
+        # Decal Byte-Stutter
         if num_repeats > 0:
             unique_padding = bytes([random.randint(0, 255) for _ in range(16)]) * num_repeats
             processed_image_data = raw_image_data + unique_padding
